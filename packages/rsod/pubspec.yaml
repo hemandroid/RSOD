@@ -1,0 +1,17 @@
+name: rsod
+description: A Flutter package to replace the Red Screen of Death (RSOD) with a user-friendly custom error screen and analytics integration.
+version: 1.0.0
+homepage: https://github.com/yourusername/rsod
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: ">=3.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
