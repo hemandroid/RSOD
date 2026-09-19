@@ -39,6 +39,9 @@ dependencies:
   rsod:
     path: packages/rsod
 
+  incident_sdk:
+    path: packages/incident_sdk
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

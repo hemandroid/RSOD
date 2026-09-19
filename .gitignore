@@ -117,3 +117,11 @@ app.*.map.json
 !**/ios/**/default.mode2v3
 !**/ios/**/default.pbxuser
 !**/ios/**/default.perspectivev3
+
+# Local secrets
+.env.local
+android/key.properties
+
+# Local-only working docs — never pushed
+docs/
+.superpowers/
