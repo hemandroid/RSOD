@@ -119,9 +119,15 @@ app.*.map.json
 !**/ios/**/default.perspectivev3
 
 # Local secrets
-.env.local
+.env
+.env.*
+!.env.example
 android/key.properties
 
 # Local-only working docs — never pushed
 docs/
 .superpowers/
+
+# Backend dedupe state — runtime data, not source.
+.incident-dedupe.json
+backend/.incident-dedupe.json

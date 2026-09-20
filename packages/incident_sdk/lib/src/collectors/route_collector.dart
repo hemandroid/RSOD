@@ -4,21 +4,13 @@ import 'package:flutter/widgets.dart';
 
 import 'collector.dart';
 
-/// Keeps the last [maxEntries] navigation events with timestamps — the "how
-/// it occurred" trail an AI turns into reproduction steps.
+/// Keeps the last [maxEntries] navigation events with timestamps.
 ///
-/// Only [Route.settings.name] is kept, never `settings.arguments`: arguments
-/// are arbitrary app objects and routinely carry exactly the PII (emails,
-/// tokens, user records) this SDK must not capture by default.
+/// Only [Route.settings.name] is kept, never `settings.arguments` — those
+/// are arbitrary app objects that routinely carry PII.
 ///
 /// Register the instance as a `NavigatorObserver` and pass [collector] to
-/// `IncidentSDK.init`:
-///
-/// ```dart
-/// final routeHistory = RouteHistoryCollector();
-/// MaterialApp(navigatorObservers: [routeHistory], ...);
-/// IncidentSDK.init(..., collectors: [routeHistory.collector]);
-/// ```
+/// `IncidentSDK.init`.
 class RouteHistoryCollector extends NavigatorObserver {
   RouteHistoryCollector({this.maxEntries = 20});
 
@@ -37,8 +29,6 @@ class RouteHistoryCollector extends NavigatorObserver {
       'route': route?.settings.name ?? '/',
       'at': DateTime.now().toIso8601String(),
     });
-    // Bounded on every write: no crash-loop or deep navigation stack can
-    // grow this past maxEntries.
     while (_history.length > maxEntries) {
       _history.removeFirst();
     }

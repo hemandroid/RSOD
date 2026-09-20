@@ -7,8 +7,7 @@ enum IncidentSource { flutterError, platformDispatcher, zone, manual, uiStall }
 /// stall in [Incident.context], as `{'duration_ms': <int>}`.
 const String uiStallContextKey = 'ui_stall';
 
-/// A captured production failure, with whatever context we could gather
-/// before the app died.
+/// A captured production failure, with whatever context we could gather.
 ///
 /// Serialisation must stay cheap: this is built and written to disk on the
 /// crash path, where we may have milliseconds.
@@ -25,8 +24,8 @@ class Incident {
   /// Where Flutter says this happened ("building _FooWidget(dirty)").
   final String? errorContext;
 
-  /// Build identity. Without [commitSha] the backend cannot pick the right
-  /// symbols file, and the trace stays unreadable.
+  /// Without [commitSha] the backend can't pick the right symbols file, and
+  /// the trace stays unreadable.
   final String appVersion;
   final String commitSha;
   final String platform;
@@ -66,9 +65,8 @@ class Incident {
         capturedAt: DateTime.parse(json['captured_at'] as String),
         source: IncidentSource.values.firstWhere(
           (s) => s.name == json['source'],
-          // A source this build does not know (queued by a newer build,
-          // read after a downgrade) must not lose the incident. `manual`
-          // claims the least: no hook, no measurement.
+          // Unknown source (queued by a newer build, read after a downgrade)
+          // must not lose the incident; `manual` claims the least.
           orElse: () => IncidentSource.manual,
         ),
         error: json['error'] as String,

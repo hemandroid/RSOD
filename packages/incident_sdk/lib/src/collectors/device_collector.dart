@@ -9,27 +9,16 @@ import 'collector.dart';
 
 /// Device and build context, read once and cached.
 ///
-/// Everything except the hardware model comes from `dart:io` synchronously
-/// at construction. The model needs a platform channel, so it is resolved
-/// once in the background and written into the same cached map when it
-/// arrives — [collector] stays a plain map read, with nothing to await or
-/// fail at on the crash path. A device that never answers simply has no
-/// `model` key.
-///
-/// `processMemoryBytes` is this process's resident set size, not
-/// system-wide available memory.
+/// `processMemoryBytes` is this process's RSS, not system-wide memory.
 ///
 /// Deliberately excludes [Platform.environment] and [Platform.localHostname]
-/// — both routinely carry a real person's name (a home directory path, a
-/// device named "Jane's iPhone"). A model identifier does not.
+/// — both routinely carry a real person's name.
 class DeviceCollector {
   DeviceCollector._(this._data);
 
   final Map<String, dynamic> _data;
 
-  /// Reads everything once. Call at init and keep the instance for the
-  /// app's lifetime — [collector] only ever replays this snapshot, it never
-  /// re-reads the platform.
+  /// Call once at init; [collector] only replays this snapshot.
   factory DeviceCollector.capture() {
     final data = <String, dynamic>{
       'os': Platform.operatingSystem,
@@ -40,9 +29,8 @@ class DeviceCollector {
       'appVersion': BuildIdentity.appVersion,
       'commitSha': BuildIdentity.commitSha,
     };
-    // Not awaited: `IncidentSDK.init` is synchronous so the hooks are live
-    // before the first frame. A crash before this resolves loses the model
-    // field and nothing else.
+    // Not awaited: init must stay synchronous. A crash before this
+    // resolves just loses the model field.
     unawaited(_resolveModel().then((model) {
       if (model != null) data['model'] = model;
     }));
@@ -53,7 +41,6 @@ class DeviceCollector {
     try {
       return modelFrom((await DeviceInfoPlugin().deviceInfo).data);
     } catch (_) {
-      // No plugin, no channel, an unparseable payload: all the same here.
       return null;
     }
   }
@@ -65,8 +52,8 @@ class DeviceCollector {
     // iOS puts a marketing name in `model` ("iPhone") and the real hardware
     // in `utsname.machine` ("iPhone14,2").
     final utsname = data['utsname'];
-    // `is Map`, not a cast: a wrong type off a platform channel must cost
-    // the model field, not throw out of a collector.
+    // `is Map`, not a cast: a bad platform payload should cost the model
+    // field, not throw.
     final machine = utsname is Map ? utsname['machine'] : null;
     if (machine is String && machine.trim().isNotEmpty) return machine;
     // Android/macOS: `model`. Linux: `prettyName`. Windows: `productName`.
@@ -77,9 +64,8 @@ class DeviceCollector {
     return null;
   }
 
-  /// This snapshot, registered under the name `device`. A copy: the model
-  /// lands in [_data] from a background future, and a caller must not be
-  /// handed a map that changes under it.
+  /// Registered under `device`. Returns a copy since [_data] can still be
+  /// mutated by the background model resolution.
   IncidentCollector get collector =>
       (name: 'device', collect: () => Map<String, dynamic>.of(_data));
 }

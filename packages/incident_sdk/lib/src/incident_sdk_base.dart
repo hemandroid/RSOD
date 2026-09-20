@@ -34,31 +34,18 @@ class IncidentSDK {
 
   /// Starts capturing. Call before [runApp]; safe to call twice.
   ///
-  /// Installs the error hooks, starts the UI-stall watchdog and starts the
-  /// background uploader. Hooks go in synchronously so a crash during
-  /// startup is still caught; the storage directory and encryption key
-  /// resolve in the background, and the queue moves itself and its backlog
-  /// once they do. One queue and one capture exist for the life of the app,
-  /// mutated in place rather than replaced — a guarded zone opened during
-  /// startup keeps a reference and must not be left writing to the
-  /// abandoned temp directory.
+  /// Hooks install synchronously so a startup crash is still caught, while
+  /// storage and the encryption key resolve in the background; the queue
+  /// and capture are mutated in place rather than replaced, since a guarded
+  /// zone from startup keeps its own reference to them.
   ///
-  /// [endpoint] is the full ingest URL; nothing here appends a path.
+  /// [endpoint] is the full ingest URL, with no path appended. [collectors]
+  /// run on every capture; device info and [log] are added by default, and
+  /// an explicit collector of the same name always wins.
   ///
-  /// [collectors] run, in order, on every capture (see
-  /// [buildCollectorRegistry]) and are the only extension point new context
-  /// sources need. The two that need nothing from the host — device info
-  /// and [log] — are added on top of that list unless
-  /// [includeDefaultCollectors] is false; an explicit collector of the same
-  /// name wins, so a host that supplies its own `device` or `logs` never
-  /// ends up with both.
-  ///
-  /// Pass [screenshots] to attach a screenshot of the failing frame. It
-  /// cannot be an ordinary collector: a frame takes a frame to capture, so
-  /// the image arrives after the incident is already on disk and is
-  /// amended in afterwards. The host must also wrap the app root in
-  /// `RepaintBoundary(key: screenshots.boundaryKey, ...)` — the one thing
-  /// this call cannot do for it.
+  /// [screenshots] can't be an ordinary collector, since a frame takes a
+  /// frame to capture — it's amended onto the incident afterwards. Wrap the
+  /// app root in `RepaintBoundary(key: screenshots.boundaryKey, ...)`.
   static void init({
     required String endpoint,
     required String appToken,
@@ -78,12 +65,12 @@ class IncidentSDK {
       allowInsecureEndpoint: allowInsecureEndpoint,
     );
 
-    // Before anything builds a collector: DeviceCollector's platform channel
-    // needs a binding, and a model resolved too early is silently lost.
+    // DeviceCollector's platform channel needs a binding, or a model
+    // resolved too early is silently lost.
     WidgetsFlutterBinding.ensureInitialized();
 
-    // Temp dir first so the hooks can be live immediately; the queue moves to
-    // the durable directory as soon as path_provider answers.
+    // Temp dir first so the hooks can be live immediately; the queue moves
+    // to the durable directory once path_provider answers.
     final queue = IncidentQueue(
       dir: Directory('${Directory.systemTemp.path}/incidents'),
       maxPending: maxPending,
@@ -102,18 +89,14 @@ class IncidentSDK {
               .then((entry) {
                 if (entry != null) queue.amend(id, {'screenshot': entry});
               })
-              // Fire-and-forget on the crash path: a screenshot that fails
-              // must not become an unhandled rejection.
+              // A failed screenshot must not become an unhandled rejection.
               .catchError((Object _) {})),
     )..install();
 
-    // Off the crash path from here. Each worker is guarded on its own: the
-    // hooks are already live and `_capture` is already set, so a throw here
-    // would both escape into the host's `main()` and make every later
-    // `init()` return early — capturing forever, shipping nothing.
+    // Off the crash path from here: `_capture` is already live, so each
+    // worker is guarded individually rather than letting a throw here
+    // escape into the host's `main()`.
     _startQuietly('uploader', () {
-      // The uploader holds the same queue object the hooks write to, so it
-      // keeps draining across the move to the durable directory.
       _uploader = IncidentUploader(
         queue: queue,
         transport: HttpIncidentTransport(endpoint: ingest, appToken: appToken),
@@ -130,8 +113,7 @@ class IncidentSDK {
     }
 
     resolveIncidentCipher().then(queue.attachCipher).catchError((Object e) {
-      // Queued incidents stay in plaintext. Say so: a device that cannot
-      // reach its keystore is one where this matters most.
+      // Queued incidents stay in plaintext — worth surfacing loudly.
       _selfNote(
         'could not resolve the data key ($e). Queued incidents remain '
         'unencrypted on disk.',
@@ -141,8 +123,7 @@ class IncidentSDK {
     getApplicationSupportDirectory()
         .then((dir) => queue.moveTo(Directory('${dir.path}/incidents')))
         .catchError((_) {
-      // Stay in the temp directory. Incidents survive the crash but not
-      // necessarily a device reboot, which beats losing them outright.
+      // Stay in the temp directory: survives the crash, if not a reboot.
       return null;
     });
 
@@ -169,7 +150,6 @@ class IncidentSDK {
     return capture == null ? body() : capture.runGuarded(body);
   }
 
-  /// Incidents captured but not yet uploaded.
   static int get pendingCount => _queue?.length ?? 0;
 
   @visibleForTesting
@@ -183,10 +163,8 @@ class IncidentSDK {
     _watchdog = null;
   }
 
-  /// The SDK reporting on itself. `debugPrint` is compiled out of release —
-  /// the one build that matters here — so anything the SDK needs to say about
-  /// its own health also goes into the log ring, which rides along inside
-  /// every incident that does get through.
+  /// `debugPrint` is compiled out of release, so this also goes into the log
+  /// ring, which rides along inside every incident that gets through.
   static void _selfNote(String message) {
     _log.log('incident_sdk: $message', level: LogLevel.error);
     debugPrint('incident_sdk: $message');
@@ -207,12 +185,9 @@ class IncidentSDK {
     List<IncidentCollector> collectors, {
     required bool includeDefaultCollectors,
   }) {
-    // Screenshots are not in this list: a frame takes a frame to capture,
-    // so it can never be ready for this synchronous, every-incident
-    // snapshot. It reaches its one matching incident afterwards, via
-    // `screenshots.captureSoon()` + `queue.amend()` below — registering
-    // `screenshots.collector` here would instead attach the same stale,
-    // unrelated frame to every incident captured after it.
+    // Screenshots aren't in this list: a frame takes a frame to capture, so
+    // it could never be ready for this synchronous snapshot — registering
+    // it here would attach the same stale frame to every later incident.
     final extras = <IncidentCollector>[
       if (includeDefaultCollectors) ...[
         DeviceCollector.capture().collector,
@@ -253,10 +228,8 @@ class IncidentSDK {
         'incident_sdk: endpoint must be an absolute http(s) URL with a host',
       );
     }
-    // Everything an incident carries — the app token, stack traces, logs,
-    // network metadata, a screenshot of the user's screen — would cross the
-    // wire in the clear. A host that genuinely wants that (a local sink on a
-    // dev machine) has to say so by name.
+    // Everything an incident carries (token, stack traces, a screenshot)
+    // would cross the wire in the clear; a host that wants that has to opt in.
     if (uri.isScheme('http') && !allowInsecureEndpoint) {
       throw ArgumentError.value(
         endpoint,

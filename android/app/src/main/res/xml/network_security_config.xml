@@ -4,6 +4,11 @@
          the host machine, where the demo's local ingest sink runs. -->
     <base-config cleartextTrafficPermitted="false" />
     <domain-config cleartextTrafficPermitted="true">
+        <!-- The emulator's view of the host machine. -->
         <domain includeSubdomains="false">10.0.2.2</domain>
+        <!-- For a physical phone on a hotspot, add the laptop's literal IP
+             here and rebuild. Android matches domains and IP literals only —
+             a CIDR range is not accepted — so there is no way to pre-authorise
+             a subnet. A cloudflared tunnel gives https and needs no entry. -->
     </domain-config>
 </network-security-config>

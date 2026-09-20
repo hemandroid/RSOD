@@ -3,13 +3,9 @@ import 'package:flutter/foundation.dart';
 /// A named unit of context, gathered synchronously when an incident is
 /// captured.
 ///
-/// This is a record, not an interface, because a collector is never more
-/// than "a name and a callback" — there is exactly one shape any collector
-/// takes, so a class hierarchy would exist only to be extended once per
-/// collector (route history, logs, device info, and whatever comes next).
-/// Adding a collector means constructing one of these and adding it to the
-/// list passed to `IncidentSDK.init` — no other file changes, which is the
-/// property the acceptance test for this package proves.
+/// A record, not a class: every collector is exactly "a name and a
+/// callback", so a class hierarchy would only be extended once per
+/// collector.
 typedef IncidentCollector = ({
   String name,
   Map<String, dynamic> Function() collect,
@@ -17,12 +13,8 @@ typedef IncidentCollector = ({
 
 /// Runs every collector and merges their output under its own name.
 ///
-/// Isolation is per-collector: a collector that throws loses only its own
-/// entry — replaced with an error marker — never the incident being
-/// captured and never another collector's output. [IncidentCapture] already
-/// has a catch-all around the whole context callback, but without per-entry
-/// isolation here, the first broken collector in the list would take every
-/// collector after it down with it.
+/// Isolation is per-collector: a throwing collector loses only its own
+/// entry, never the whole incident or other collectors' output.
 Map<String, dynamic> Function() buildCollectorRegistry(
   List<IncidentCollector> collectors,
 ) {
@@ -37,10 +29,9 @@ Map<String, dynamic> Function() buildCollectorRegistry(
     final context = <String, dynamic>{};
     for (final collector in collectors) {
       try {
-        // Release fallback for the collision the assert catches in debug: a
-        // colliding name gets a suffixed key (`route#2`) so both
-        // collectors' data survive. Throwing here would mean a name typo
-        // takes down production incident reporting.
+        // Release fallback for the debug-only assert above: a colliding
+        // name gets suffixed (`route#2`) instead of throwing, so a name
+        // typo can't take down production incident reporting.
         context[freeCollectorKey(context, collector.name)] =
             collector.collect();
       } catch (e) {

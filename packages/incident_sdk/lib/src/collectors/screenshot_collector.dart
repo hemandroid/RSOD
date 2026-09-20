@@ -11,46 +11,30 @@ import '../widgets/incident_mask.dart';
 import 'collector.dart';
 
 /// Keeps a masked screenshot ready to attach to an incident, captured on
-/// demand rather than on a timer — see the task report for why.
+/// demand rather than on a timer.
 ///
-/// This is opt-in: see [IncidentMask]. A screen inside [boundaryKey] that
-/// isn't wrapped is captured as-is.
+/// Opt-in: wrap sensitive UI inside [boundaryKey] in [IncidentMask] — an
+/// unwrapped screen is captured as-is.
 ///
-/// - [captureSoon]: call once, right after queuing an incident synchronously
-///   without a screenshot (frame capture can't itself be synchronous). Waits
-///   up to [captureTimeout]; attach the result to that incident if non-null
-///   (`IncidentQueue.amend`).
-/// - [didChangeAppLifecycleState]: captures on `inactive`/`paused` as a
-///   fallback cache for [collect], for a process that dies without going
-///   through a Dart error handler. A hard native crash still gets nothing.
+/// - [captureSoon]: call once right after queuing an incident synchronously
+///   (frame capture can't itself be synchronous); attach the result via
+///   `IncidentQueue.amend`.
+/// - [didChangeAppLifecycleState]: caches a frame on `inactive`/`paused` as
+///   a fallback for a process that dies without hitting a Dart error
+///   handler. A hard native crash still gets nothing.
 ///
-/// Wire it up by attaching [boundaryKey] to a [RepaintBoundary] around
-/// whatever should be screenshotted (typically the app root):
-///
-/// ```dart
-/// final screenshots = ScreenshotCollector();
-/// RepaintBoundary(key: screenshots.boundaryKey, child: child);
-/// IncidentSDK.init(..., screenshots: screenshots);
-/// ```
-///
-/// Wrap anything sensitive inside that boundary in [IncidentMask] — nothing
-/// here finds sensitive UI on its own.
+/// Attach [boundaryKey] to a [RepaintBoundary] around whatever should be
+/// screenshotted (typically the app root).
 class ScreenshotCollector extends WidgetsBindingObserver {
-  /// Constructing this must not require a live binding: hosts build it as a
-  /// top-level `final`, which Dart initialises on first read — at the
-  /// `IncidentSDK.init(..., screenshots: screenshots)` argument, before
-  /// `init` has had the chance to call `ensureInitialized`. Reaching for
-  /// `WidgetsBinding.instance` here crashed release builds on launch.
+  /// Must not require a live binding — hosts construct this as a top-level
+  /// `final`, before `IncidentSDK.init` can call `ensureInitialized`.
+  /// Reaching for `WidgetsBinding.instance` here crashed release builds.
   ScreenshotCollector({this.maxBytes = 128 * 1024}) {
     WidgetsFlutterBinding.ensureInitialized().addObserver(this);
   }
 
-  /// Dropped, not truncated, if even the smallest downscale exceeds this.
-  ///
-  /// 128KB of raw PNG, not final payload size: base64 inflates by ~4/3, so
-  /// this becomes ~171KB of encoded JSON text — about a third of
-  /// `IncidentQueue`'s default 512KB per-incident cap, leaving room for the
-  /// rest of the report.
+  /// Dropped, not truncated, past this size — ~128KB of raw PNG becomes
+  /// ~171KB base64, about a third of `IncidentQueue`'s 512KB cap.
   final int maxBytes;
 
   /// Bound on a capture attempt, and the hard backstop on masking: whatever
@@ -78,10 +62,8 @@ class ScreenshotCollector extends WidgetsBindingObserver {
     });
   }
 
-  /// See the class doc. Never throws. Falls back to the last
-  /// lifecycle-cached frame if a fresh one isn't ready in time — still only
-  /// ever handed to the one incident this call is for, via the caller's
-  /// `amend`, never attached to incidents automatically.
+  /// Never throws. Falls back to the last lifecycle-cached frame if a
+  /// fresh one isn't ready — handed only to the caller's own `amend`.
   Future<Map<String, dynamic>?> captureSoon() async {
     final bytes = await _captureOnce();
     if (bytes != null) {
@@ -92,9 +74,8 @@ class ScreenshotCollector extends WidgetsBindingObserver {
     return cached == null ? null : _entryFor(cached);
   }
 
-  /// One capture at a time: a crash loop must not pile up a `toImage` + PNG
-  /// encode per error, nor hold masking on continuously. Later calls while
-  /// one is in flight are dropped, not queued.
+  /// One capture at a time — a crash loop must not pile up encodes or hold
+  /// masking on continuously; overlapping calls are dropped, not queued.
   Future<Uint8List?> _captureOnce() async {
     if (_capturing) return null;
     final renderObject = boundaryKey.currentContext?.findRenderObject();
@@ -113,16 +94,8 @@ class ScreenshotCollector extends WidgetsBindingObserver {
     }
   }
 
-  /// A post-frame callback registered while the scheduler is idle fires
-  /// only after the next frame's paint, which is what makes it safe to
-  /// rasterize once it fires: that paint is guaranteed to see the mask this
-  /// call just armed. But if capture starts *during* a frame (this error
-  /// was thrown from paint, from semantics, or from another persistent
-  /// callback ordered after `RendererBinding`'s own) — `schedulerPhase !=
-  /// idle` — the callback instead fires at the end of *that same* frame,
-  /// whose paint already ran before the mask was armed. One more full
-  /// frame round-trip is burned in that case so the paint actually
-  /// rasterized is guaranteed to be the masked one.
+  /// Captures started mid-frame need one extra frame round-trip so the
+  /// mask (armed here) is guaranteed to be in the paint that gets rasterized.
   Future<Uint8List?> _armAndRasterize(RenderRepaintBoundary boundary) async {
     final startedMidFrame =
         SchedulerBinding.instance.schedulerPhase != SchedulerPhase.idle;
@@ -136,8 +109,8 @@ class ScreenshotCollector extends WidgetsBindingObserver {
     SchedulerBinding.instance.addPostFrameCallback((_) {
       if (!framePainted.isCompleted) framePainted.complete();
     });
-    // Masking a boundary with no IncidentMask in it wouldn't otherwise
-    // request a frame at all.
+    // Without this, a boundary with no IncidentMask wouldn't request a
+    // frame at all.
     SchedulerBinding.instance.scheduleFrame();
     return framePainted.future;
   }
@@ -152,7 +125,6 @@ class ScreenshotCollector extends WidgetsBindingObserver {
         final bytes = data.buffer.asUint8List();
         if (bytes.length <= maxBytes) return bytes;
       } catch (_) {
-        // Try the next, smaller ratio.
       } finally {
         image?.dispose();
       }
@@ -166,11 +138,10 @@ class ScreenshotCollector extends WidgetsBindingObserver {
         'image_base64': base64Encode(bytes),
       };
 
-  /// The cached frame as a context entry — for inspecting or testing this
-  /// collector directly. Do not register this as a per-incident collector:
-  /// every incident would then carry whatever frame was last cached, not
-  /// one that corresponds to that incident; use [captureSoon] + `amend`
-  /// instead (see `IncidentSDK.init`'s `screenshots` parameter).
+  /// The cached frame as a context entry, for inspecting this collector
+  /// directly. Do not register as a per-incident collector — every
+  /// incident would carry whatever frame was last cached; use
+  /// [captureSoon] + `amend` instead.
   IncidentCollector get collector => (
         name: 'screenshot',
         collect: () {
@@ -180,8 +151,7 @@ class ScreenshotCollector extends WidgetsBindingObserver {
         },
       );
 
-  /// Stops listening for app lifecycle changes. Not called automatically;
-  /// unlike the persistent frame callback this class used to register
-  /// (which Flutter cannot ever remove), this one can be undone.
+  /// Not called automatically. Unlike the persistent callback this class
+  /// used to register, this one can be removed.
   void dispose() => WidgetsBinding.instance.removeObserver(this);
 }

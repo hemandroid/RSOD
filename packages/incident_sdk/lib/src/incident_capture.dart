@@ -9,21 +9,18 @@ import 'incident_queue.dart';
 /// Installs the error hooks and turns whatever they catch into a queued
 /// [Incident].
 ///
-/// Every path through here is synchronous and swallows its own errors. This
-/// code runs while the app is failing; throwing from it would replace a
+/// Every path through here is synchronous and swallows its own errors: this
+/// runs while the app is failing, and throwing here would replace a
 /// diagnosable crash with an undiagnosable one.
 class IncidentCapture {
   final IncidentQueue queue;
 
   /// Extra context gathered at capture time (route, logs, network, device).
-  /// Collectors are added in day 3; the hook shape does not change when they
-  /// are.
   final Map<String, dynamic> Function()? collectContext;
 
-  /// Called with the id of an incident that was just written to disk, for
-  /// context that cannot be gathered synchronously (a screenshot needs a
-  /// frame). Fire-and-forget and guarded: the incident is already safe, and
-  /// nothing this does may affect it. See `IncidentQueue.amend`.
+  /// Called with the id of an incident already written to disk, for context
+  /// that can't be gathered synchronously (a screenshot needs a frame).
+  /// Fire-and-forget and guarded — see `IncidentQueue.amend`.
   final void Function(String incidentId)? onIncidentQueued;
 
   IncidentCapture({
@@ -44,8 +41,8 @@ class IncidentCapture {
         stack: details.stack?.toString() ?? '',
         errorContext: details.context?.toString(),
       );
-      // Keep the default behaviour: in debug this still prints to the console,
-      // and anyone who installed a handler before us still gets called.
+      // Keep the default behaviour: anyone who installed a handler before us
+      // still gets called.
       if (previousOnError != null) {
         previousOnError(details);
       } else {
@@ -60,7 +57,7 @@ class IncidentCapture {
         stack: stack.toString(),
       );
       // Returning true marks the error handled, which stops the process from
-      // being torn down. We report, then let the app keep running.
+      // being torn down.
       return true;
     };
   }
@@ -77,8 +74,8 @@ class IncidentCapture {
     });
   }
 
-  /// Report a handled failure that still deserves a ticket — a failed payment
-  /// call, a degraded response — without crashing the app.
+  /// Report a handled failure that still deserves a ticket, without crashing
+  /// the app.
   void report(Object error, StackTrace stack, {String? context}) => _capture(
         source: IncidentSource.manual,
         error: error.toString(),
@@ -86,8 +83,7 @@ class IncidentCapture {
         errorContext: context,
       );
 
-  /// Report a recovered UI-thread stall. A tear-off of this is exactly
-  /// `UiWatchdog`'s `StallCallback`.
+  /// A tear-off of this is exactly `UiWatchdog`'s `StallCallback`.
   void reportStall(Duration stallDuration) {
     final ms = stallDuration.inMilliseconds;
     _capture(
@@ -120,8 +116,8 @@ class IncidentCapture {
         appVersion: BuildIdentity.appVersion,
         commitSha: BuildIdentity.commitSha,
         platform: defaultTargetPlatform.name,
-        // Collector output first: a collector must not be able to overwrite
-        // the SDK's own signal about why it captured.
+        // Collector output first: a collector must not overwrite the SDK's
+        // own signal about why it captured.
         context: {..._safeContext(), ...extraContext},
       );
       if (queue.enqueueSync(incident)) {
@@ -146,9 +142,9 @@ class IncidentCapture {
     }
   }
 
-  /// Time-ordered and unique within a run. The queue sorts by filename, so the
-  /// sequence suffix keeps ordering stable when two errors land in the same
-  /// millisecond — which is exactly what a crash loop does.
+  /// Time-ordered and unique within a run — the sequence suffix keeps
+  /// ordering stable when two errors land in the same millisecond, which is
+  /// exactly what a crash loop does.
   String _nextId() {
     final ms = DateTime.now().toUtc().millisecondsSinceEpoch;
     final seq = (_sequence++).toString().padLeft(4, '0');

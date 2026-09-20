@@ -36,9 +36,9 @@ const kMaxInspectBytes = 256 * 1024;
 /// the body doesn't bound nesting depth (`"[[[[...]]]]"` fits in a few KB).
 const _kMaxJsonDepth = 20;
 
-/// Minimum key count before [_looksLikeDictionary] even considers a map a
-/// dictionary — below this, a shared value shape is as likely coincidence
-/// (`{"width": 10, "height": 20}`) as a real per-record dictionary.
+/// Minimum key count before [_looksLikeDictionary] treats a map as one —
+/// below this, a shared value shape is as likely coincidence
+/// (`{"width": 10, "height": 20}`) as a real dictionary.
 const _kDictionaryMinKeys = 4;
 
 final _uuidPattern = RegExp(
@@ -50,7 +50,7 @@ final _opaqueIdPrefixPattern = RegExp(r'^([a-z]{1,8})_([A-Za-z0-9]{6,})$');
 /// A key that is lexically PII-shaped on its own (email, UUID, hex digest,
 /// an opaque prefixed id like `cus_Nq8sT2bXyZ`). Second line of defence on
 /// top of [_looksLikeDictionary]: a plain username is lexically identical
-/// to a field name, so this alone can't catch it.
+/// to a field name.
 bool _looksLikePiiKey(String key) {
   if (key.length > 40) return true;
   if (key.contains('@')) return true;
@@ -65,49 +65,38 @@ bool _looksLikePiiKey(String key) {
   return false;
 }
 
-/// Broad kind of a shape. The dictionary test compares only this, never what
-/// is inside, so an optional or nullable field can't make two entries of one
-/// dictionary look unrelated.
 String _shapeKind(dynamic shape) =>
     shape is Map ? 'map' : (shape is List ? 'list' : 'scalar');
 
-/// A map's keys are schema (`payment`, `status`) when fixed, and data (a
-/// per-entry id or email) when open-ended. Key text can't tell them apart —
-/// a username and a field name are lexically identical — so this compares
-/// the values instead: a dictionary's entries are uniformly the same kind.
+/// True when a map's keys look like data (ids/emails) rather than schema —
+/// key text can't tell them apart, so this compares value shapes instead:
+/// a dictionary's entries are uniformly the same kind.
 ///
-/// Deliberately over-collapses: a record whose 4+ fields happen to share a
-/// kind loses its field names. Losing detail beats leaking keys.
+/// Deliberately over-collapses: losing field names beats leaking keys.
 bool _looksLikeDictionary(int keyCount, List<dynamic> valueShapes) {
   if (keyCount < _kDictionaryMinKeys) return false;
   // A null entry is an absent record, not a differently-kinded one; letting
   // it veto the collapse is how a 2-maps-2-nulls map leaked its keys.
   final present = valueShapes.where((s) => s != 'Null').toList();
   if (present.isEmpty) return true;
-  // Majority, not unanimous: a partial-failure response
-  // (`{"a":{...},"b":{...},"c":{...},"d":"not found"}`) is still a dictionary,
-  // and requiring unanimity here leaked every key in it.
+  // Majority, not unanimous: a partial-failure response with one
+  // differently-shaped entry is still a dictionary.
   if (_majorityKindCount(present) * 2 > present.length) return true;
-  // Kinds alone tie on an even split — two object entries and two list
-  // entries under four usernames read as a record and leaked all four. Repeated
-  // shapes are the other dictionary tell: entries of one dictionary reuse a
-  // handful of shapes, while a record's fields each have their own.
+  // Kinds alone tie on an even split; repeated shapes are the other
+  // dictionary tell — a record's fields each have their own shape.
   return _distinctShapes(present) * 2 <= present.length;
 }
 
-/// How many distinct shapes appear in [shapes], compared structurally. Every
-/// scalar counts as one shape: `42` and `"absent"` say nothing about whether
-/// their keys are schema, so letting them count separately inflated the tally
-/// and left a two-maps-two-scalars dictionary reading as a record.
+/// Distinct shapes in [shapes], compared structurally. Every scalar counts
+/// as one shape — counting them separately inflated the tally and misread
+/// scalar dictionaries as records.
 int _distinctShapes(List<dynamic> shapes) => shapes
     .map((s) => s is Map || s is List ? _canonicalShape(s) : 'scalar')
     .toSet()
     .length;
 
-/// Order-independent rendering of a shape: two entries of one dictionary are
-/// the same shape even when the server emits their fields in a different
-/// order. Comparing raw `jsonEncode` output would call them distinct and
-/// leave the keys exposed.
+/// Order-independent shape rendering — comparing raw `jsonEncode` output
+/// would call same-shaped entries distinct whenever field order differs.
 String _canonicalShape(dynamic shape) {
   if (shape is Map) {
     final keys = shape.keys.map((k) => k.toString()).toList()..sort();
@@ -120,7 +109,6 @@ String _canonicalShape(dynamic shape) {
   return '$shape';
 }
 
-/// How many of [shapes] share the most common [_shapeKind].
 int _majorityKindCount(List<dynamic> shapes) {
   final counts = <String, int>{};
   for (final s in shapes) {
@@ -149,10 +137,8 @@ String _majorityKind(List<dynamic> shapes) {
   return best;
 }
 
-/// A representative shape for a collapsed dictionary: the most common shape
-/// among entries of the majority kind, ignoring nulls. Passing the unfiltered
-/// list would let three nulls out-vote a real record and report a dictionary
-/// of maps as nulls.
+/// Representative shape for a collapsed dictionary, ignoring nulls — else
+/// a few null entries could out-vote a real record's shape.
 dynamic _representativeShape(List<dynamic> valueShapes) {
   final present = valueShapes.where((s) => s != 'Null').toList();
   if (present.isEmpty) return 'Null';
@@ -161,9 +147,8 @@ dynamic _representativeShape(List<dynamic> valueShapes) {
   return _majorityShape(ofKind).shape;
 }
 
-/// The most common shape among [valueShapes] (by [_shapeSignature]) and how
-/// many share it — used as the representative entry when collapsing a
-/// dictionary, so an outlier isn't shown as if it were typical.
+/// Most common shape among [valueShapes] and how many share it — used as
+/// the representative when collapsing a dictionary.
 ({dynamic shape, int count}) _majorityShape(List<dynamic> valueShapes) {
   final counts = <String, int>{};
   for (final s in valueShapes) {
@@ -184,11 +169,9 @@ dynamic _representativeShape(List<dynamic> valueShapes) {
   );
 }
 
-/// Canonical form of a shape for equality comparison (Dart's `==` on
-/// map/list literals is identity-based). Leaf-insensitive on purpose: every
-/// scalar collapses to `*` and every list to `[*]`, so a nullable or
-/// optional field doesn't make two dictionary entries look like different
-/// kinds. Key sets, nesting and map-vs-list-vs-scalar still matter.
+/// Canonical shape for equality (Dart's `==` on map/list literals is
+/// identity-based). Leaf-insensitive: every scalar/list collapses to `*`
+/// so a nullable or optional field doesn't make two entries look different.
 String _shapeSignature(dynamic shape) {
   if (shape is Map) {
     final keys = shape.keys.map((k) => k.toString()).toList()..sort();
@@ -222,23 +205,15 @@ String _redactPathSegment(String segment) {
 }
 
 /// Records the last [maxEntries] HTTP requests made through
-/// [IncidentHttpClient] — the "what was the app talking to" trail that lets
-/// an AI reason about a crash like "the payment API returned null for this
-/// field" from the recorded response *shape* alone.
+/// [IncidentHttpClient] — the "what was the app talking to" trail.
 ///
 /// Query values, the URL fragment, userinfo credentials,
 /// [kSensitiveHeaders], and PII-shaped path segments/JSON keys are redacted
 /// with no opt-out; bodies are never recorded unless [captureBody] is set.
 ///
 /// Known limitation: a small object (below [_kDictionaryMinKeys] entries)
-/// keyed by data that isn't lexically PII-shaped (e.g. a couple of plain
-/// usernames) still has its keys emitted — see [_looksLikeDictionary].
-///
-/// ```dart
-/// final network = NetworkCollector();
-/// final client = IncidentHttpClient(network, inner: http.Client());
-/// IncidentSDK.init(..., collectors: [network.collector]);
-/// ```
+/// keyed by non-PII-shaped data (e.g. plain usernames) still has its keys
+/// emitted — see [_looksLikeDictionary].
 class NetworkCollector {
   NetworkCollector({
     this.maxEntries = 20,
@@ -296,8 +271,7 @@ class NetworkCollector {
     }
     if (responseBytes != null) entry['responseBytes'] = responseBytes;
 
-    // Extracted regardless of captureBody: never a value, and keys go
-    // through the dictionary/PII checks below.
+    // Extracted regardless of captureBody — it's never a value, just shape.
     final responseShape = _shapeOfJsonBody(
       responseContentType,
       responseBodyBytes,
@@ -351,10 +325,8 @@ class NetworkCollector {
   }
 
 
-  /// Size-capped, best-effort redacted capture — only called when
-  /// [captureBody] is on. A non-JSON body is truncated but not otherwise
-  /// inspected; there's no generic way to find sensitive text in arbitrary
-  /// content.
+  /// Size-capped, best-effort capture — only called when [captureBody] is
+  /// on. A non-JSON body is truncated but not otherwise inspected.
   String? _captureBody(String? contentType, List<int>? bodyBytes) {
     if (bodyBytes == null || bodyBytes.isEmpty) return null;
     if (bodyBytes.length > kMaxInspectBytes) return null;
@@ -423,8 +395,7 @@ class NetworkCollector {
   }
 
   /// Key names and value *types*, recursively — never a value. [depth] caps
-  /// at [_kMaxJsonDepth] so a pathologically nested response can't recurse
-  /// this into a stack overflow.
+  /// nesting so a pathological response can't stack-overflow this.
   dynamic _shapeOf(dynamic value, int depth) {
     if (depth > _kMaxJsonDepth) return 'MaxDepthExceeded';
     if (value == null) return 'Null';
