@@ -1,0 +1,7 @@
+{
+  "INCIDENT_ENDPOINT": "http://10.0.2.2:8787/ingest",
+  "INCIDENT_APP_TOKEN": "<same value as INGEST_APP_TOKEN in .env.local>",
+  "INCIDENT_ALLOW_INSECURE": "true",
+  "USE_LIVE_CATALOGUE": "false",
+  "COMMIT_SHA": "dev"
+}

@@ -1,0 +1,51 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // Day-to-day. Emulator reaches the laptop's backend at 10.0.2.2:8787.
+      // The backend is its own repo now: FlutterCon_2026/incident-backend.
+      "name": "Nimbus — debug (local backend)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "args": ["--dart-define-from-file=dart_defines.local.json"]
+    },
+    {
+      // What gets demoed. Release strips asserts and obfuscates the stack
+      // trace, which is the whole point of the symbolication segment.
+      // The symbols subdirectory must match COMMIT_SHA in the dart-defines
+      // file — the backend looks in <SYMBOLS_DIR>/<COMMIT_SHA>, so a flat
+      // build/symbols yields an unsymbolicated ticket and no error.
+      "name": "Nimbus — release (local backend)",
+      "request": "launch",
+      "type": "dart",
+      "flutterMode": "release",
+      "program": "lib/main.dart",
+      "args": [
+        "--dart-define-from-file=dart_defines.local.json",
+        "--split-debug-info=build/symbols/dev",
+        "--obfuscate"
+      ]
+    },
+    {
+      // Untethered phone against the deployed backend. Fill in the host in
+      // dart_defines.cloud.json first.
+      "name": "Nimbus — release (cloud backend)",
+      "request": "launch",
+      "type": "dart",
+      "flutterMode": "release",
+      "program": "lib/main.dart",
+      "args": [
+        "--dart-define-from-file=dart_defines.cloud.json",
+        "--split-debug-info=build/symbols/dev",
+        "--obfuscate"
+      ]
+    },
+    {
+      "name": "Nimbus — widget tests",
+      "request": "launch",
+      "type": "dart",
+      "program": "test/widget_test.dart"
+    }
+  ]
+}

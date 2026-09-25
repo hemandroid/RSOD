@@ -11,6 +11,7 @@
 .svn/
 .swiftpm/
 migrate_working_dir/
+.deck-kit/
 
 # IntelliJ related
 *.iml
@@ -124,10 +125,14 @@ app.*.map.json
 !.env.example
 android/key.properties
 
-# Local-only working docs — never pushed
+# Local-only working docs and talk tooling — never pushed
 docs/
 .superpowers/
+deck-kit/
 
 # Backend dedupe state — runtime data, not source.
 .incident-dedupe.json
-backend/.incident-dedupe.json
+
+# Generated from .env.local; carries the ingest token.
+dart_defines.local.json
+dart_defines.cloud.json
