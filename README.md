@@ -7,8 +7,8 @@ and the team is notified on Slack — with no action from the user.
 The point: **a customer should never have to report your bug.** A one-star review or a support
 email costs you the customer and days of turnaround. The app should file its own ticket first.
 
-Built by Kamal Shree and Hema Sai Charan Kothamasu for the flutterCon India 2026 session
-*Beyond Crashlytics: Building Autonomous Incident Intelligence for Flutter.*
+Built by [Kamal Shree](https://github.com/kamalshree) and [Hema Sai Charan](https://github.com/hemandroid) for the **flutterCon India 2026** session
+***Beyond Crashlytics: Building Autonomous Incident Intelligence for Flutter.***
 
 ## Repositories
 
