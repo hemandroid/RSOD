@@ -10,6 +10,11 @@ email costs you the customer and days of turnaround. The app should file its own
 Built for the FlutterCon India 2026 session
 *Beyond Crashlytics: Building Autonomous Incident Intelligence for Flutter.*
 
+## Repositories
+
+- **[github.com/hemandroid/RSOD](https://github.com/hemandroid/RSOD)**: the Flutter demo app and the `incident_sdk` package (this repository)
+- **[github.com/hemandroid/incident-backend](https://github.com/hemandroid/incident-backend)**: the backend: symbolicator, dedupe, analyser, Jira filer, Slack notifier
+
 ## Integration
 
 ```dart
@@ -24,9 +29,4 @@ void main() {
 | Path | What it is |
 |---|---|
 | `packages/incident_sdk/` | The SDK — capture hooks, context collectors, disk-first queue, uploader |
-| `docs/` | Plans, the talk brief, and the input checklist — start at [docs/README.md](docs/README.md) |
-| `packages/rsod/`, `lib/` | Earlier red-screen experiment, kept as a crash-trigger harness during development |
-
-## Status
-
-In active development against a 5-day build plan. See [docs/PLAN_5_DAY.md](docs/PLAN_5_DAY.md).
+| `lib/` | Nimbus, the demo store app used on stage to trigger network, navigation and runtime failures |
